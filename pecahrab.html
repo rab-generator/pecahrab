@@ -1,0 +1,807 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pemecah RAB Global ke Per Kegiatan - RT-Ku Terbaik</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <style>
+        body { background-color: #f4f6f9; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        .header { background: linear-gradient(135deg, #1b4f72 0%, #2874a6 50%, #5dade2 100%); color: white; padding: 22px 0; margin-bottom: 28px; }
+        .drop-zone {
+            border: 2px dashed #2874a6;
+            border-radius: 10px;
+            background: #ffffff;
+            padding: 35px 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .drop-zone:hover, .drop-zone.dragover { background: #ebf5fb; border-color: #1b4f72; }
+        .card { border: none; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.06); margin-bottom: 20px; }
+        .badge-infra { background-color: #d35400; color: #fff; }
+        .badge-noninfra { background-color: #117a65; color: #fff; }
+        .loading-overlay {
+            display: none; position: fixed; inset: 0; background: rgba(255,255,255,0.85);
+            z-index: 9999; justify-content: center; align-items: center; flex-direction: column;
+        }
+    </style>
+</head>
+<body>
+
+<div class="loading-overlay" id="loading">
+    <div class="spinner-border text-primary" style="width: 3rem; height: 3rem;" role="status"></div>
+    <h5 class="mt-3 text-primary fw-bold">Memproses & Memecah File RAB...</h5>
+</div>
+
+<div class="header text-center shadow-sm">
+    <h2><i class="fas fa-code-branch me-2"></i>Pemecah RAB Global ke RAB Per Kegiatan</h2>
+    <p class="mb-0">Konversi Otomatis File Excel RAB RT-Ku Terbaik Menjadi 1 Sheet Rekap Global + Sheet Per Kegiatan</p>
+</div>
+
+<div class="container pb-5">
+    <div class="row">
+        <!-- Panel Kiri: Upload & Identitas -->
+        <div class="col-lg-4">
+            <div class="card">
+                <div class="card-header bg-primary text-white fw-bold">
+                    <i class="fas fa-file-upload me-2"></i>1. Unggah File RAB Lama (.xlsx)
+                </div>
+                <div class="card-body">
+                    <input type="file" id="file_input" accept=".xlsx" class="d-none" onchange="handleFileSelect(event)">
+                    <div class="drop-zone" id="drop_zone" onclick="document.getElementById('file_input').click()">
+                        <i class="fas fa-file-excel fa-3x text-success mb-2"></i>
+                        <h6 class="fw-bold mb-1">Klik atau Seret File RAB (.xlsx)</h6>
+                        <small class="text-muted d-block">Gunakan file hasil export dari aplikasi RAB sebelumnya</small>
+                        <div id="file_name_badge" class="mt-2 badge bg-secondary d-none"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card" id="identitas_card" style="display:none;">
+                <div class="card-header bg-dark text-white fw-bold">
+                    <i class="fas fa-id-card me-2"></i>2. Verifikasi Identitas Wilayah
+                </div>
+                <div class="card-body">
+                    <div class="mb-2">
+                        <label class="form-label small fw-bold mb-1">RT</label>
+                        <input type="text" id="meta_rt" class="form-control form-control-sm">
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small fw-bold mb-1">Desa / Kelurahan</label>
+                        <input type="text" id="meta_desa" class="form-control form-control-sm">
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small fw-bold mb-1">Kecamatan</label>
+                        <input type="text" id="meta_kec" class="form-control form-control-sm">
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small fw-bold mb-1">Ketua RT</label>
+                        <input type="text" id="meta_ketua" class="form-control form-control-sm">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold mb-1">Sekretaris RT (Opsional)</label>
+                        <input type="text" id="meta_sekretaris" class="form-control form-control-sm" placeholder="Kosongkan jika titik-titik">
+                    </div>
+                    <button onclick="generateSplitExcel()" class="btn btn-success w-100 fw-bold py-2">
+                        <i class="fas fa-download me-2"></i>Export RAB Terpecah (.xlsx)
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Panel Kanan: Pratinjau Hasil Pemecahan -->
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header fw-bold d-flex justify-content-between align-items-center">
+                    <span><i class="fas fa-layer-group me-2 text-primary"></i>Pratinjau Daftar Sheet Kegiatan</span>
+                    <span class="badge bg-primary" id="total_kegiatan_badge">0 Kegiatan</span>
+                </div>
+                <div class="card-body" id="preview_container">
+                    <div class="text-center text-muted py-5">
+                        <i class="fas fa-folder-open fa-3x mb-3 opacity-50"></i>
+                        <p class="mb-0">Belum ada file diunggah. Silakan unggah file <code>RAB_RT-Ku_Terbaik_...xlsx</code> di sebelah kiri untuk memecah RAB secara otomatis.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let parsedData = {
+        rt: '',
+        desa: '',
+        kecamatan: '',
+        ketua: '',
+        kegiatanList: [] // { nomorRab, program, kegiatan, isInfra, items: [{ kat, katNama, uraian, vol, satuan, harga }] }
+    };
+
+    const dropZone = document.getElementById('drop_zone');
+    dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+    dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('dragover');
+        if (e.dataTransfer.files.length) processExcelFile(e.dataTransfer.files[0]);
+    });
+
+    function handleFileSelect(e) {
+        if (e.target.files.length) processExcelFile(e.target.files[0]);
+    }
+
+    function formatRp(num) {
+        return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(num || 0);
+    }
+
+    function cleanCellText(val) {
+        if (val === null || val === undefined) return '';
+        if (typeof val === 'object') {
+            if (val.result !== undefined) return String(val.result).trim();
+            if (val.richText) return val.richText.map(t => t.text).join('').trim();
+        }
+        return String(val).trim();
+    }
+
+    function cleanNumber(val) {
+        if (val === null || val === undefined) return 0;
+        if (typeof val === 'number') return val;
+        if (typeof val === 'object' && val.result !== undefined) return Number(val.result) || 0;
+        const parsed = parseFloat(String(val).replace(/[^0-9.-]/g, ''));
+        return isNaN(parsed) ? 0 : parsed;
+    }
+
+    async function processExcelFile(file) {
+        document.getElementById('loading').style.display = 'flex';
+        const badge = document.getElementById('file_name_badge');
+        badge.textContent = file.name;
+        badge.classList.remove('d-none');
+
+        try {
+            const wb = new ExcelJS.Workbook();
+            const buffer = await file.arrayBuffer();
+            await wb.xlsx.load(buffer);
+
+            parsedData = { rt: '', desa: '', kecamatan: '', ketua: '', kegiatanList: [] };
+
+            // 1. Ambil Identitas dari Sheet Rekap RAB (Form 13)
+            const wsRekap = wb.getWorksheet('Rekap RAB (Form 13)') || wb.worksheets[0];
+            if (wsRekap) {
+                parsedData.rt = cleanCellText(wsRekap.getCell('C4').value).replace(/^:\s*/, '');
+                parsedData.desa = cleanCellText(wsRekap.getCell('C5').value).replace(/^:\s*/, '');
+                parsedData.kecamatan = cleanCellText(wsRekap.getCell('C6').value).replace(/^:\s*/, '');
+
+                for (let r = wsRekap.rowCount; r >= 1; r--) {
+                    const txt = cleanCellText(wsRekap.getCell(`E${r}`).value);
+                    if (txt.startsWith('(') && txt.endsWith(')')) {
+                        parsedData.ketua = txt.replace(/[()]/g, '').trim();
+                        break;
+                    }
+                }
+            }
+
+            // 2. Fungsi Ekstrak Sheet Detail
+            const extractFromDetailSheet = (sheetName, isInfra) => {
+                const ws = wb.getWorksheet(sheetName);
+                if (!ws) return;
+
+                let currentProgram = '';
+                let currentKegiatan = null;
+                let currentKat = '1';
+                let currentKatNama = 'Bahan';
+
+                ws.eachRow((row) => {
+                    const c1 = cleanCellText(row.getCell(1).value);
+                    const c2 = cleanCellText(row.getCell(2).value);
+                    const c3 = cleanCellText(row.getCell(3).value);
+                    const c4 = cleanCellText(row.getCell(4).value);
+                    const c5 = row.getCell(5).value;
+
+                    if (c2 === 'Program' && c3) {
+                        currentProgram = c3.replace(/^:\s*/, '');
+                    } else if (c2 === 'Kegiatan' && c3) {
+                        if (currentKegiatan && currentKegiatan.items.length > 0) {
+                            parsedData.kegiatanList.push(currentKegiatan);
+                        }
+                        currentKegiatan = {
+                            nomorRab: parsedData.kegiatanList.length + 1,
+                            program: currentProgram,
+                            kegiatan: c3.replace(/^:\s*/, ''),
+                            isInfra: isInfra,
+                            items: []
+                        };
+                        currentKat = '1';
+                        currentKatNama = 'Bahan';
+                    } else if (currentKegiatan) {
+                        const upperC2 = c2.toUpperCase();
+                        if (
+                            c1 === 'No' ||
+                            upperC2.includes('SUB TOTAL') ||
+                            upperC2.includes('SUBTOTAL') ||
+                            upperC2.includes('TOTAL KESELURUHAN') ||
+                            (!c1 && !c2)
+                        ) {
+                            return;
+                        }
+
+                        // Jika Infrastruktur dan kolom 1 hanya angka kategori (1, 2, 3, 4)
+                        if (isInfra && ['1', '2', '3', '4'].includes(c1) && !c3 && !c4) {
+                            currentKat = c1;
+                            currentKatNama = c2;
+                            return;
+                        }
+
+                        const vol = cleanNumber(c3);
+                        const harga = cleanNumber(c5);
+
+                        if (c2) {
+                            currentKegiatan.items.push({
+                                kat: currentKat,
+                                katNama: currentKatNama,
+                                uraian: c2,
+                                vol: vol,
+                                satuan: c4,
+                                harga: harga
+                            });
+                        }
+                    }
+                });
+
+                if (currentKegiatan && currentKegiatan.items.length > 0) {
+                    parsedData.kegiatanList.push(currentKegiatan);
+                }
+            };
+
+            // Ekstrak Non-Infrastruktur & Infrastruktur (atau urutkan sesuai Rekap jika perlu)
+            extractFromDetailSheet('RAB Detail Non-Infrastruktur', false);
+            extractFromDetailSheet('RAB Detail Infrastruktur', true);
+
+            // Urutkan ulang sesuai kemunculan di Rekap RAB (Form 13) jika tersedia
+            if (wsRekap) {
+                const orderMap = [];
+                wsRekap.eachRow((row) => {
+                    const no = cleanCellText(row.getCell(1).value);
+                    const ur = cleanCellText(row.getCell(2).value);
+                    if (/^\d+\.\d+$/.test(no) && ur) {
+                        orderMap.push(ur);
+                    }
+                });
+                if (orderMap.length > 0) {
+                    parsedData.kegiatanList.sort((a, b) => {
+                        const idxA = orderMap.indexOf(a.kegiatan);
+                        const idxB = orderMap.indexOf(b.kegiatan);
+                        return (idxA === -1 ? 999 : idxA) - (idxB === -1 ? 999 : idxB);
+                    });
+                    parsedData.kegiatanList.forEach((item, idx) => item.nomorRab = idx + 1);
+                }
+            }
+
+            if (parsedData.kegiatanList.length === 0) {
+                alert('Tidak ditemukan data kegiatan pada file Excel ini. Pastikan file sesuai format aplikasi RAB.');
+                return;
+            }
+
+            // Isi form identitas & render pratinjau
+            document.getElementById('meta_rt').value = parsedData.rt;
+            document.getElementById('meta_desa').value = parsedData.desa;
+            document.getElementById('meta_kec').value = parsedData.kecamatan;
+            document.getElementById('meta_ketua').value = parsedData.ketua;
+            document.getElementById('identitas_card').style.display = 'block';
+
+            renderPreview();
+        } catch (err) {
+            console.error(err);
+            alert('Gagal membaca file Excel: ' + err.message);
+        } finally {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('file_input').value = '';
+        }
+    }
+
+    function renderPreview() {
+        const container = document.getElementById('preview_container');
+        document.getElementById('total_kegiatan_badge').textContent = `${parsedData.kegiatanList.length} Kegiatan (+1 Rekap Global)`;
+
+        let grandTotal = 0;
+        let html = `
+            <div class="alert alert-info py-2 small mb-3">
+                <i class="fas fa-info-circle me-1"></i>
+                File hasil export akan memiliki <strong>${parsedData.kegiatanList.length + 1} Sheet</strong>: 1 Sheet <strong>Rekap RAB Global</strong> dan ${parsedData.kegiatanList.length} Sheet detail per kegiatan yang saling terhubung rumus.
+            </div>
+        `;
+
+        parsedData.kegiatanList.forEach((keg, idx) => {
+            const subTotal = keg.items.reduce((acc, it) => acc + (it.vol * it.harga), 0);
+            grandTotal += subTotal;
+
+            const badge = keg.isInfra
+                ? `<span class="badge badge-infra">INFRASTRUKTUR</span>`
+                : `<span class="badge badge-noninfra">NON INFRASTRUKTUR</span>`;
+
+            let rowsHtml = '';
+            keg.items.forEach((it, i) => {
+                rowsHtml += `
+                    <tr>
+                        <td class="text-center">${keg.isInfra ? `${it.kat}.${i + 1}` : i + 1}</td>
+                        <td>${keg.isInfra ? `<span class="text-muted small">[${it.katNama}]</span> ` : ''}${it.uraian}</td>
+                        <td class="text-center">${it.vol}</td>
+                        <td class="text-center">${it.satuan}</td>
+                        <td class="text-end">${formatRp(it.harga)}</td>
+                        <td class="text-end fw-semibold">${formatRp(it.vol * it.harga)}</td>
+                    </tr>
+                `;
+            });
+
+            html += `
+                <div class="border rounded p-3 mb-3 bg-white shadow-sm">
+                    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-2">
+                        <div>
+                            <div class="d-flex align-items-center gap-2 mb-1">
+                                <span class="badge bg-dark">Sheet ${idx + 2}</span>
+                                ${badge}
+                                <span class="text-muted small fw-semibold">${keg.program}</span>
+                            </div>
+                            <h6 class="fw-bold mb-0 text-primary">${keg.nomorRab}. ${keg.kegiatan}</h6>
+                        </div>
+                        <div class="d-flex align-items-center gap-2">
+                            <label class="small text-muted mb-0">No. RAB:</label>
+                            <input type="number" class="form-control form-control-sm text-center fw-bold" style="width: 70px;"
+                                value="${keg.nomorRab}" onchange="parsedData.kegiatanList[${idx}].nomorRab = parseInt(this.value) || ${idx + 1}">
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-bordered mb-1 small">
+                            <thead class="table-light text-center">
+                                <tr>
+                                    <th width="8%">No</th>
+                                    <th>Uraian</th>
+                                    <th width="10%">Vol</th>
+                                    <th width="12%">Satuan</th>
+                                    <th width="18%">Harga Satuan</th>
+                                    <th width="20%">Total Jumlah</th>
+                                </tr>
+                            </thead>
+                            <tbody>${rowsHtml}</tbody>
+                            <tfoot>
+                                <tr class="table-warning fw-bold">
+                                    <td colspan="5" class="text-end">TOTAL KEGIATAN</td>
+                                    <td class="text-end">${formatRp(subTotal)}</td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>
+            `;
+        });
+
+        html += `
+            <div class="p-3 bg-success text-white rounded d-flex justify-content-between align-items-center">
+                <span class="fw-bold">TOTAL KESELURUHAN REKAP RAB GLOBAL</span>
+                <span class="fs-5 fw-bold">${formatRp(grandTotal)}</span>
+            </div>
+        `;
+
+        container.innerHTML = html;
+    }
+
+    // Membuat nama sheet Excel yang valid (maks 31 karakter, bebas karakter terlarang, dan unik)
+    function makeSafeSheetName(rawName, existingNames) {
+        let clean = rawName.replace(/[\\/?*[\]:]/g, '').trim();
+        if (clean.length > 31) clean = clean.substring(0, 31).trim();
+        let candidate = clean || 'Kegiatan';
+        let counter = 2;
+        while (existingNames.includes(candidate.toLowerCase())) {
+            const suffix = ` (${counter})`;
+            candidate = clean.substring(0, 31 - suffix.length) + suffix;
+            counter++;
+        }
+        existingNames.push(candidate.toLowerCase());
+        return candidate;
+    }
+
+    async function generateSplitExcel() {
+        if (!parsedData.kegiatanList.length) return;
+
+        const rt = document.getElementById('meta_rt').value.trim() || '.....';
+        const desa = document.getElementById('meta_desa').value.trim() || '.....';
+        const kec = document.getElementById('meta_kec').value.trim() || '.....';
+        const ketua = document.getElementById('meta_ketua').value.trim() || '.........................................';
+        const sekretaris = document.getElementById('meta_sekretaris').value.trim() || '.........................................';
+
+        const wb = new ExcelJS.Workbook();
+        const usedSheetNames = ['rekap rab global'];
+
+        const thinBorder = {
+            top: { style: 'thin' }, left: { style: 'thin' },
+            bottom: { style: 'thin' }, right: { style: 'thin' }
+        };
+
+        // =====================================================================
+        // SHEET 1: REKAP RAB GLOBAL (Form 13)
+        // =====================================================================
+        const wsRekap = wb.addWorksheet('Rekap RAB Global');
+        wsRekap.columns = [
+            { width: 8 },  // A: No
+            { width: 48 }, // B: Uraian
+            { width: 12 }, // C: Volume
+            { width: 14 }, // D: Satuan
+            { width: 22 }, // E: Harga Satuan
+            { width: 25 }  // F: Total Jumlah
+        ];
+
+        wsRekap.mergeCells('A1:F1');
+        wsRekap.getCell('A1').value = 'REKAP RENCANA ANGGARAN BIAYA (RAB) GLOBAL';
+        wsRekap.getCell('A1').font = { name: 'Calibri', size: 12, bold: true };
+        wsRekap.getCell('A1').alignment = { horizontal: 'center' };
+
+        wsRekap.mergeCells('A2:F2');
+        wsRekap.getCell('A2').value = 'PROGRAM RT-KU TERBAIK';
+        wsRekap.getCell('A2').font = { name: 'Calibri', size: 12, bold: true };
+        wsRekap.getCell('A2').alignment = { horizontal: 'center' };
+
+        wsRekap.getCell('A4').value = 'RT';             wsRekap.getCell('C4').value = `: ${rt}`;
+        wsRekap.getCell('A5').value = 'Desa/Kelurahan'; wsRekap.getCell('C5').value = `: ${desa}`;
+        wsRekap.getCell('A6').value = 'Kecamatan';      wsRekap.getCell('C6').value = `: ${kec}`;
+        [4, 5, 6].forEach(r => wsRekap.getCell(`A${r}`).font = { bold: true });
+
+        const rHead1 = wsRekap.getRow(8);
+        rHead1.values = ['No', 'Uraian', 'Volume', 'Satuan', 'Harga Satuan (Rp)', 'Total Jumlah (Rp)'];
+        rHead1.eachCell(c => {
+            c.font = { bold: true };
+            c.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+            c.border = thinBorder;
+            c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE9ECEF' } };
+        });
+
+        const rHead2 = wsRekap.getRow(9);
+        rHead2.values = ['a', 'b', 'c', 'd', 'e', 'f = c x e'];
+        rHead2.eachCell(c => {
+            c.font = { italic: true, size: 10 };
+            c.alignment = { horizontal: 'center', vertical: 'middle' };
+            c.border = thinBorder;
+        });
+
+        // Kelompokkan kegiatan berdasarkan Program untuk Rekap Global
+        const programOrder = ['Ketahanan Sosial', 'Pemberdayaan Masyarakat', 'Infrastruktur', 'Operasional'];
+        const groupedByProg = {};
+        parsedData.kegiatanList.forEach(keg => {
+            const pName = keg.program || 'Lainnya';
+            if (!groupedByProg[pName]) groupedByProg[pName] = [];
+            groupedByProg[pName].push(keg);
+        });
+
+        const allPrograms = [
+            ...programOrder.filter(p => groupedByProg[p]),
+            ...Object.keys(groupedByProg).filter(p => !programOrder.includes(p))
+        ];
+
+        let rekapRowIdx = 10;
+        const subTotalCells = [];
+
+        // =====================================================================
+        // BUAT SHEET PER KEGIATAN (SESUAI FORMAT CONTOH RAB.xlsx)
+        // =====================================================================
+        const sheetRefs = new Map(); // keg -> { sheetName, totalCellRef }
+
+        parsedData.kegiatanList.forEach((keg, idx) => {
+            const sheetTitle = makeSafeSheetName(`${idx + 1}. ${keg.kegiatan}`, usedSheetNames);
+            const ws = wb.addWorksheet(sheetTitle);
+
+            // Struktur Kolom A..I persis seperti CONTOH RAB.xlsx
+            ws.columns = [
+                { width: 8 },   // A: No
+                { width: 42 },  // B: Uraian (merged B:C)
+                { width: 3 },   // C: ':' pada header identitas / bagian Uraian
+                { width: 14 },  // D: Volume
+                { width: 12 },  // E: Satuan (merged E:G)
+                { width: 4 },   // F
+                { width: 4 },   // G
+                { width: 20 },  // H: Harga Satuan
+                { width: 24 }   // I: Total Jumlah
+            ];
+
+            // Judul Atas (Baris 1 - 3)
+            ws.mergeCells('A1:I1');
+            ws.getCell('A1').value = 'RENCANA ANGGARAN BIAYA (RAB) DETAIL KEGIATAN';
+            ws.getCell('A1').font = { bold: true, size: 12 };
+            ws.getCell('A1').alignment = { horizontal: 'center' };
+
+            ws.mergeCells('A2:I2');
+            ws.getCell('A2').value = keg.isInfra ? 'INFRASTRUKTUR' : 'NON INFRASTRUKTUR';
+            ws.getCell('A2').font = { bold: true, size: 11 };
+            ws.getCell('A2').alignment = { horizontal: 'center' };
+
+            ws.mergeCells('A3:I3');
+            ws.getCell('A3').value = 'PROGRAM RT-KU TERBAIK';
+            ws.getCell('A3').font = { bold: true, size: 11 };
+            ws.getCell('A3').alignment = { horizontal: 'center' };
+
+            // Identitas Kegiatan (Baris 5 - 10)
+            const metaRows = [
+                [5, 'Nomor RAB', keg.nomorRab],
+                [6, 'Program', keg.program],
+                [7, 'Kegiatan', keg.kegiatan],
+                [8, 'RT', rt],
+                [9, 'Desa/kelurahan', desa],
+                [10, 'Kecamatan', kec]
+            ];
+            metaRows.forEach(([rNum, label, val]) => {
+                ws.mergeCells(`A${rNum}:B${rNum}`);
+                ws.getCell(`A${rNum}`).value = label;
+                ws.getCell(`A${rNum}`).font = { bold: true };
+                ws.getCell(`C${rNum}`).value = ':';
+                ws.getCell(`C${rNum}`).alignment = { horizontal: 'center' };
+                ws.getCell(`D${rNum}`).value = val;
+            });
+
+            // Header Tabel (Baris 13 & 14)
+            ws.mergeCells('B13:C13');
+            ws.mergeCells('E13:G13');
+            ws.getCell('A13').value = 'No';
+            ws.getCell('B13').value = 'Uraian';
+            ws.getCell('D13').value = 'Volume';
+            ws.getCell('E13').value = 'Satuan';
+            ws.getCell('H13').value = 'Harga\nSatuan';
+            ws.getCell('I13').value = 'Total\nJumlah';
+            ws.getRow(13).height = 28;
+
+            for (let c = 1; c <= 9; c++) {
+                const cell = ws.getCell(13, c);
+                cell.font = { bold: true };
+                cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+                cell.border = thinBorder;
+                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE9ECEF' } };
+            }
+
+            ws.mergeCells('B14:C14');
+            ws.mergeCells('E14:G14');
+            ws.getCell('A14').value = 'a';
+            ws.getCell('B14').value = 'b';
+            ws.getCell('D14').value = 'c';
+            ws.getCell('E14').value = 'd';
+            ws.getCell('H14').value = 'e';
+            ws.getCell('I14').value = 'f= c x e';
+
+            for (let c = 1; c <= 9; c++) {
+                const cell = ws.getCell(14, c);
+                cell.font = { italic: true, size: 10 };
+                cell.alignment = { horizontal: 'center', vertical: 'middle' };
+                cell.border = thinBorder;
+            }
+
+            // Isi Baris Rincian Mulai Baris 15
+            let curRow = 15;
+            const startDataRow = 15;
+
+            if (!keg.isInfra) {
+                keg.items.forEach((item, i) => {
+                    ws.mergeCells(`B${curRow}:C${curRow}`);
+                    ws.mergeCells(`E${curRow}:G${curRow}`);
+
+                    ws.getCell(`A${curRow}`).value = i + 1;
+                    ws.getCell(`A${curRow}`).alignment = { horizontal: 'center' };
+                    ws.getCell(`B${curRow}`).value = item.uraian;
+                    ws.getCell(`D${curRow}`).value = item.vol;
+                    ws.getCell(`D${curRow}`).alignment = { horizontal: 'center' };
+                    ws.getCell(`E${curRow}`).value = item.satuan;
+                    ws.getCell(`E${curRow}`).alignment = { horizontal: 'center' };
+                    ws.getCell(`H${curRow}`).value = item.harga;
+                    ws.getCell(`H${curRow}`).numFmt = '#,##0';
+                    ws.getCell(`I${curRow}`).value = { formula: `D${curRow}*H${curRow}`, result: item.vol * item.harga };
+                    ws.getCell(`I${curRow}`).numFmt = '#,##0';
+
+                    for (let c = 1; c <= 9; c++) ws.getCell(curRow, c).border = thinBorder;
+                    curRow++;
+                });
+
+                const endDataRow = curRow - 1;
+                ws.mergeCells(`A${curRow}:H${curRow}`);
+                ws.getCell(`A${curRow}`).value = 'TOTAL';
+                ws.getCell(`A${curRow}`).font = { bold: true };
+                ws.getCell(`A${curRow}`).alignment = { horizontal: 'center' };
+                ws.getCell(`I${curRow}`).value = { formula: `SUM(I${startDataRow}:I${endDataRow})` };
+                ws.getCell(`I${curRow}`).font = { bold: true };
+                ws.getCell(`I${curRow}`).numFmt = '#,##0';
+
+                for (let c = 1; c <= 9; c++) {
+                    const cell = ws.getCell(curRow, c);
+                    cell.border = thinBorder;
+                    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9EAD3' } };
+                }
+
+                sheetRefs.set(keg, { sheetName: sheetTitle, totalCell: `I${curRow}` });
+            } else {
+                // Format Infrastruktur (Dikelompokkan per Bahan, Alat, Upah, Lainnya)
+                const katMap = { '1': 'Bahan', '2': 'Alat', '3': 'Upah', '4': 'Lainnya' };
+                const groupedKat = { '1': [], '2': [], '3': [], '4': [] };
+                keg.items.forEach(it => {
+                    const k = groupedKat[it.kat] ? it.kat : '4';
+                    groupedKat[k].push(it);
+                });
+
+                const subKatCells = [];
+
+                Object.keys(groupedKat).forEach(kKey => {
+                    const list = groupedKat[kKey];
+                    if (list.length === 0) return;
+
+                    // Header Kategori (misal: 1 | Bahan)
+                    ws.mergeCells(`B${curRow}:C${curRow}`);
+                    ws.mergeCells(`E${curRow}:G${curRow}`);
+                    ws.getCell(`A${curRow}`).value = Number(kKey);
+                    ws.getCell(`A${curRow}`).alignment = { horizontal: 'center' };
+                    ws.getCell(`B${curRow}`).value = katMap[kKey];
+                    for (let c = 1; c <= 9; c++) {
+                        ws.getCell(curRow, c).font = { bold: true };
+                        ws.getCell(curRow, c).border = thinBorder;
+                    }
+                    curRow++;
+
+                    const subStart = curRow;
+                    list.forEach((item, idxItem) => {
+                        ws.mergeCells(`B${curRow}:C${curRow}`);
+                        ws.mergeCells(`E${curRow}:G${curRow}`);
+
+                        ws.getCell(`A${curRow}`).value = `${kKey}.${idxItem + 1}`;
+                        ws.getCell(`A${curRow}`).alignment = { horizontal: 'center' };
+                        ws.getCell(`B${curRow}`).value = item.uraian;
+                        ws.getCell(`D${curRow}`).value = item.vol;
+                        ws.getCell(`D${curRow}`).alignment = { horizontal: 'center' };
+                        ws.getCell(`E${curRow}`).value = item.satuan;
+                        ws.getCell(`E${curRow}`).alignment = { horizontal: 'center' };
+                        ws.getCell(`H${curRow}`).value = item.harga;
+                        ws.getCell(`H${curRow}`).numFmt = '#,##0';
+                        ws.getCell(`I${curRow}`).value = { formula: `D${curRow}*H${curRow}`, result: item.vol * item.harga };
+                        ws.getCell(`I${curRow}`).numFmt = '#,##0';
+
+                        for (let c = 1; c <= 9; c++) ws.getCell(curRow, c).border = thinBorder;
+                        curRow++;
+                    });
+                    const subEnd = curRow - 1;
+
+                    // Subtotal Kategori
+                    ws.mergeCells(`A${curRow}:H${curRow}`);
+                    ws.getCell(`A${curRow}`).value = `SUB TOTAL ${kKey} (${katMap[kKey].toUpperCase()})`;
+                    ws.getCell(`A${curRow}`).font = { bold: true, italic: true };
+                    ws.getCell(`A${curRow}`).alignment = { horizontal: 'right' };
+                    ws.getCell(`I${curRow}`).value = { formula: `SUM(I${subStart}:I${subEnd})` };
+                    ws.getCell(`I${curRow}`).font = { bold: true };
+                    ws.getCell(`I${curRow}`).numFmt = '#,##0';
+                    for (let c = 1; c <= 9; c++) ws.getCell(curRow, c).border = thinBorder;
+
+                    subKatCells.push(`I${curRow}`);
+                    curRow++;
+                });
+
+                // Grand Total Kegiatan Infrastruktur
+                ws.mergeCells(`A${curRow}:H${curRow}`);
+                ws.getCell(`A${curRow}`).value = 'TOTAL';
+                ws.getCell(`A${curRow}`).font = { bold: true };
+                ws.getCell(`A${curRow}`).alignment = { horizontal: 'center' };
+                ws.getCell(`I${curRow}`).value = subKatCells.length > 0 ? { formula: subKatCells.join('+') } : 0;
+                ws.getCell(`I${curRow}`).font = { bold: true };
+                ws.getCell(`I${curRow}`).numFmt = '#,##0';
+
+                for (let c = 1; c <= 9; c++) {
+                    const cell = ws.getCell(curRow, c);
+                    cell.border = thinBorder;
+                    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9EAD3' } };
+                }
+
+                sheetRefs.set(keg, { sheetName: sheetTitle, totalCell: `I${curRow}` });
+            }
+
+            // Blok Tanda Tangan di bagian bawah (sesuai CONTOH RAB.xlsx)
+            const sigDateRow = curRow + 2;
+            const sigRoleRow = curRow + 3;
+            const sigNameRow = curRow + 7;
+
+            ws.mergeCells(`G${sigDateRow}:I${sigDateRow}`);
+            ws.getCell(`G${sigDateRow}`).value = `${kec}, ........................ 2026`;
+            ws.getCell(`G${sigDateRow}`).alignment = { horizontal: 'center' };
+
+            ws.mergeCells(`A${sigRoleRow}:D${sigRoleRow}`);
+            ws.getCell(`A${sigRoleRow}`).value = 'Mengetahui, Ketua RT';
+            ws.getCell(`A${sigRoleRow}`).alignment = { horizontal: 'center' };
+
+            ws.mergeCells(`F${sigRoleRow}:I${sigRoleRow}`);
+            ws.getCell(`F${sigRoleRow}`).value = 'Dibuat Oleh Sekretaris RT';
+            ws.getCell(`F${sigRoleRow}`).alignment = { horizontal: 'center' };
+
+            ws.mergeCells(`A${sigNameRow}:D${sigNameRow}`);
+            ws.getCell(`A${sigNameRow}`).value = `( ${ketua} )`;
+            ws.getCell(`A${sigNameRow}`).font = { bold: true };
+            ws.getCell(`A${sigNameRow}`).alignment = { horizontal: 'center' };
+
+            ws.mergeCells(`F${sigNameRow}:I${sigNameRow}`);
+            ws.getCell(`F${sigNameRow}`).value = `( ${sekretaris} )`;
+            ws.getCell(`F${sigNameRow}`).font = { bold: true };
+            ws.getCell(`F${sigNameRow}`).alignment = { horizontal: 'center' };
+        });
+
+        // =====================================================================
+        // ISI BARIS REKAP RAB GLOBAL & LINK FORMULA KE MASING-MASING SHEET
+        // =====================================================================
+        allPrograms.forEach((progName, pIdx) => {
+            const rProg = wsRekap.getRow(rekapRowIdx++);
+            rProg.values = [pIdx + 1, progName, '', '', '', ''];
+            rProg.eachCell(c => {
+                c.font = { bold: true };
+                c.border = thinBorder;
+                c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2F4F4' } };
+            });
+
+            const kegRows = [];
+            groupedByProg[progName].forEach((keg, kIdx) => {
+                const ref = sheetRefs.get(keg);
+                const rKeg = wsRekap.getRow(rekapRowIdx++);
+                rKeg.values = [
+                    `${pIdx + 1}.${kIdx + 1}`,
+                    keg.kegiatan,
+                    1,
+                    'Kegiatan',
+                    { formula: `'${ref.sheetName}'!${ref.totalCell}` },
+                    { formula: `C${rKeg.number}*E${rKeg.number}` }
+                ];
+                rKeg.getCell(1).alignment = { horizontal: 'center' };
+                rKeg.getCell(3).alignment = { horizontal: 'center' };
+                rKeg.getCell(4).alignment = { horizontal: 'center' };
+                rKeg.getCell(5).numFmt = '#,##0';
+                rKeg.getCell(6).numFmt = '#,##0';
+                rKeg.eachCell(c => c.border = thinBorder);
+                kegRows.push(`F${rKeg.number}`);
+            });
+
+            const rSub = wsRekap.getRow(rekapRowIdx++);
+            rSub.values = [
+                '',
+                `SUB TOTAL ${pIdx + 1} (${progName.toUpperCase()})`,
+                '', '', '',
+                kegRows.length > 0 ? { formula: kegRows.join('+') } : 0
+            ];
+            rSub.eachCell(c => {
+                c.font = { bold: true };
+                c.border = thinBorder;
+                c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF2CC' } };
+            });
+            rSub.getCell(6).numFmt = '#,##0';
+            subTotalCells.push(`F${rSub.number}`);
+        });
+
+        const rGrand = wsRekap.getRow(rekapRowIdx++);
+        rGrand.values = [
+            '',
+            'TOTAL KESELURUHAN ANGGARAN',
+            '', '', '',
+            subTotalCells.length > 0 ? { formula: subTotalCells.join('+') } : 0
+        ];
+        rGrand.eachCell(c => {
+            c.font = { bold: true, size: 11 };
+            c.border = thinBorder;
+            c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9EAD3' } };
+        });
+        rGrand.getCell(6).numFmt = '#,##0';
+
+        // Tanda Tangan pada Rekap RAB Global
+        const rSigDate = rekapRowIdx + 2;
+        const rSigRole = rekapRowIdx + 3;
+        const rSigName = rekapRowIdx + 7;
+
+        wsRekap.getCell(`E${rSigDate}`).value = `${kec}, ........................ 2026`;
+        wsRekap.getCell(`B${rSigRole}`).value = 'Mengetahui, Ketua RT';
+        wsRekap.getCell(`E${rSigRole}`).value = 'Dibuat Oleh Sekretaris RT';
+        wsRekap.getCell(`B${rSigName}`).value = `( ${ketua} )`;
+        wsRekap.getCell(`B${rSigName}`).font = { bold: true };
+        wsRekap.getCell(`E${rSigName}`).value = `( ${sekretaris} )`;
+        wsRekap.getCell(`E${rSigName}`).font = { bold: true };
+
+        const buf = await wb.xlsx.writeBuffer();
+        const safeRt = rt.replace(/[^a-zA-Z0-9_-]/g, '_');
+        saveAs(new Blob([buf]), `RAB_Terpecah_Per_Kegiatan_${safeRt}.xlsx`);
+    }
+</script>
+</body>
+</html>
